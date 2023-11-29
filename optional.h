@@ -1,6 +1,9 @@
 #include <stdexcept>
 #include <utility>
 
+// Статья про перегрузку операторов
+// https://akrzemi1.wordpress.com/2014/06/02/ref-qualifiers/
+
 // Исключение этого типа должно генерироватся при обращении к пустому optional
 class BadOptionalAccess : public std::exception {
 public:
@@ -29,16 +32,22 @@ public:
 
     bool HasValue() const;
 
+    template <typename... Vs>
+    void Emplace(Vs&&... values);
+
     // Операторы * и -> не должны делать никаких проверок на пустоту Optional.
     // Эти проверки остаются на совести программиста
-    T& operator*();
-    const T& operator*() const;
+    T& operator*() &;
+    const T& operator*() const&;
+    T operator*() &&;
+
     T* operator->();
     const T* operator->() const;
 
     // Метод Value() генерирует исключение BadOptionalAccess, если Optional пуст
-    T& Value();
-    const T& Value() const;
+    T& Value() &;
+    const T& Value() const&;
+    T Value() &&;
 
     void Reset();
 
@@ -55,12 +64,17 @@ inline bool Optional<T>::HasValue() const {
 }
 
 template <typename T>
-inline T& Optional<T>::operator*() {
+inline T& Optional<T>::operator*() & {
     return *p_value_;
 }
 
 template <typename T>
-inline const T& Optional<T>::operator*() const {
+inline T Optional<T>::operator*() && {
+    return std::move(*p_value_);
+}
+
+template <typename T>
+inline const T& Optional<T>::operator*() const& {
     return *p_value_;
 }
 
@@ -75,7 +89,7 @@ inline const T* Optional<T>::operator->() const {
 }
 
 template <typename T>
-inline T& Optional<T>::Value() {
+inline T& Optional<T>::Value() & {
     if (!is_initialized_) {
         throw BadOptionalAccess();
     }
@@ -83,7 +97,15 @@ inline T& Optional<T>::Value() {
 }
 
 template <typename T>
-inline const T& Optional<T>::Value() const {
+inline T Optional<T>::Value() && {
+    if (!is_initialized_) {
+        throw BadOptionalAccess();
+    }
+    return std::move(*p_value_);
+}
+
+template <typename T>
+inline const T& Optional<T>::Value() const& {
     if (!is_initialized_) {
         throw BadOptionalAccess();
     }
@@ -113,7 +135,7 @@ inline Optional<T>::Optional(T&& value) {
 
 template <typename T>
 inline Optional<T>::Optional(const Optional& other) {
-    if (other.HasValue()) {
+    if (other.is_initialized_) {
         p_value_ = new (data_) T{other.Value()};
         is_initialized_ = true;
     }
@@ -121,15 +143,15 @@ inline Optional<T>::Optional(const Optional& other) {
 
 template <typename T>
 inline Optional<T>::Optional(Optional&& other) {
-    if (other.HasValue()) {
-        p_value_ = new (data_) T{std::move(other.Value())};
+    if (other.is_initialized_) {
+        p_value_ = new (data_) T{std::move(other).Value()};
         is_initialized_ = true;
     }
 }
 
 template <typename T>
 inline Optional<T>& Optional<T>::operator=(const T& value) {
-    if (this->HasValue()) {
+    if (is_initialized_) {
         *p_value_ = value;
     } else {
         p_value_ = new (data_) T{value};
@@ -140,7 +162,7 @@ inline Optional<T>& Optional<T>::operator=(const T& value) {
 
 template <typename T>
 inline Optional<T>& Optional<T>::operator=(T&& rhs) {
-    if (this->HasValue()) {
+    if (is_initialized_) {
         *p_value_ = std::move(rhs);
     } else {
         p_value_ = new (data_) T{std::move(rhs)};
@@ -152,14 +174,14 @@ inline Optional<T>& Optional<T>::operator=(T&& rhs) {
 template <typename T>
 inline Optional<T>& Optional<T>::operator=(const Optional& rhs) {
     if (this != &rhs) {
-        if (HasValue()) {
-            if (rhs.HasValue()) {
+        if (is_initialized_) {
+            if (rhs.is_initialized_) {
                 *p_value_ = *(rhs.p_value_);
             } else {
                 Reset();
             }
         } else {
-            if (rhs.HasValue()) {
+            if (rhs.is_initialized_) {
                 p_value_ = new (data_) T{*(rhs.p_value_)};
                 is_initialized_ = true;
             }
@@ -171,14 +193,14 @@ inline Optional<T>& Optional<T>::operator=(const Optional& rhs) {
 template <typename T>
 inline Optional<T>& Optional<T>::operator=(Optional&& rhs) {
     if (this != &rhs) {
-        if (HasValue()) {
-            if (rhs.HasValue()) {
+        if (is_initialized_) {
+            if (rhs.is_initialized_) {
                 *p_value_ = std::move(*(rhs.p_value_));
             } else {
                 Reset();
             }
         } else {
-            if (rhs.HasValue()) {
+            if (rhs.is_initialized_) {
                 p_value_ = new (data_) T{std::move(*(rhs.p_value_))};
                 is_initialized_ = true;
             }
@@ -189,7 +211,17 @@ inline Optional<T>& Optional<T>::operator=(Optional&& rhs) {
 
 template <typename T>
 inline Optional<T>::~Optional() {
-    if (is_initialized_) {
+    if (p_value_) {
         p_value_->~T();
     }
+}
+
+template <typename T>
+template <typename... Vs>
+inline void Optional<T>::Emplace(Vs&&... values) {
+    if (p_value_) {
+        p_value_->~T();
+    }
+    p_value_ = new (data_) T{std::forward<Vs>(values)...};
+    is_initialized_ = true;
 }
