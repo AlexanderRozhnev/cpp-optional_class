@@ -1,10 +1,7 @@
 #include <stdexcept>
 #include <utility>
 
-// Статья про перегрузку операторов
-// https://akrzemi1.wordpress.com/2014/06/02/ref-qualifiers/
-
-// Исключение этого типа должно генерироватся при обращении к пустому optional
+// This exception generated when user calls Value() method on empty Optional class
 class BadOptionalAccess : public std::exception {
 public:
     using exception::exception;
@@ -35,8 +32,8 @@ public:
     template <typename... Vs>
     void Emplace(Vs&&... values);
 
-    // Операторы * и -> не должны делать никаких проверок на пустоту Optional.
-    // Эти проверки остаются на совести программиста
+    // Operators * and -> don't do check on Optional is empty
+    // This check should care by user
     T& operator*() &;
     const T& operator*() const&;
     T operator*() &&;
@@ -44,7 +41,7 @@ public:
     T* operator->();
     const T* operator->() const;
 
-    // Метод Value() генерирует исключение BadOptionalAccess, если Optional пуст
+    // Method Value() generates exception BadOptionalAccess, if Optional empty
     T& Value() &;
     const T& Value() const&;
     T Value() &&;
@@ -52,7 +49,7 @@ public:
     void Reset();
 
 private:
-    // alignas нужен для правильного выравнивания блока памяти
+    // alignas demanded for correct memory block aligment
     alignas(T) char data_[sizeof(T)];
     bool is_initialized_ = false;
     T* p_value_ = nullptr;
